@@ -4,6 +4,20 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from backend.providers.base.base_provider_adapter import (
+    BaseProviderAdapter,
+    DetectErrorsResult,
+    ExtractMarkdownResult,
+    ExtractResponseResult,
+    GenerationState,
+    LocateInputRequest,
+    LocateInputResult,
+    ProviderError,
+    SendPromptRequest,
+    SendPromptResult,
+    StreamWaitRequest,
+    StreamWaitResult,
+)
 from backend.providers.base.streaming_detector import BaseStreamingDetector, StreamingStatus
 
 
@@ -36,7 +50,7 @@ class DeepSeekStreamingDetector(BaseStreamingDetector):
         return not dom_state.get("has_root", True) or dom_state.get("conversation_id") is None
 
 
-class DeepSeekAdapter:
+class DeepSeekAdapter(BaseProviderAdapter):
     def __init__(self, page: Any, selectors: DeepSeekSelectors | None = None) -> None:
         self.page = page
         self.selectors = selectors or DeepSeekSelectors()
@@ -60,7 +74,7 @@ class DeepSeekAdapter:
         }
         return self.detector.detect(state)
 
-    def extract_response(self) -> dict[str, Any]:
+    def _extract_response_payload(self) -> dict[str, Any]:
         text = self.page.locator(self.selectors.message_blocks).last.inner_text().strip()
         code_blocks = re.findall(r"```(?:[\w+-]+)?\n(.*?)```", text, flags=re.DOTALL)
         return {
@@ -82,3 +96,42 @@ class DeepSeekAdapter:
             return "stale_dom"
 
         return None
+
+    async def locate_input(self, request: LocateInputRequest) -> LocateInputResult:
+        selector = request.selector or self.selectors.prompt_input
+        found = self.page.locator(selector).count() > 0
+        return LocateInputResult(found=found, selector=selector if found else None)
+
+    async def send_prompt(self, request: SendPromptRequest) -> SendPromptResult:
+        self.locate_and_send_prompt(request.prompt)
+        return SendPromptResult(accepted=True)
+
+    async def wait_stream_complete(self, request: StreamWaitRequest) -> StreamWaitResult:
+        status = self.check_streaming_complete()
+        return StreamWaitResult(completed=status.is_complete, elapsed_ms=0)
+
+    async def extract_response(self) -> ExtractResponseResult:
+        payload = self._extract_response_payload()
+        return ExtractResponseResult(text=payload["markdown"])
+
+    async def extract_markdown(self) -> ExtractMarkdownResult:
+        payload = self._extract_response_payload()
+        return ExtractMarkdownResult(markdown=payload["markdown"])
+
+    async def is_generating(self) -> GenerationState:
+        status = self.check_streaming_complete()
+        return GenerationState(generating=status.is_streaming, reason=status.reason)
+
+    async def detect_errors(self) -> DetectErrorsResult:
+        code = self.detect_error()
+        if not code:
+            return DetectErrorsResult(errors=[])
+        return DetectErrorsResult(
+            errors=[
+                ProviderError(
+                    code=code,
+                    message=f"DeepSeek provider error: {code}",
+                    retryable=code in {"rate_limit", "disconnect"},
+                )
+            ]
+        )
