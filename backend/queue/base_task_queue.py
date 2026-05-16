@@ -24,7 +24,13 @@ class QueueConsumer(Protocol):
     async def __call__(self, task: QueueTask) -> None: ...
 
 
-class BaseTaskQueue(ABC):
+class LegacyTaskQueueContract(ABC):
+    """Deprecated legacy queue contract.
+
+    Prefer the canonical runtime contract from ``backend.queue.base.BaseTaskQueue``
+    (``start/stop/enqueue/register_handler``) for all new integrations.
+    """
+
     @abstractmethod
     async def push(self, task: QueueTask) -> None:
         raise NotImplementedError
