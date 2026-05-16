@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "history-rewrite"
+version = "0.1.0"
+description = "Local-only runtime skeleton"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+package-dir = {"" = "project"}
+
+[tool.setuptools.packages.find]
+where = ["project"]
