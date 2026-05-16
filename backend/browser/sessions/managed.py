@@ -6,7 +6,7 @@ from typing import Optional
 
 from playwright.async_api import BrowserContext, Page
 
-from backend.browser.playwright.cdp import CDPBrowserClient
+from backend.browser.playwright.cdp import CDPBrowserClient, CDPConnectError
 
 
 class SessionState(str, Enum):
@@ -42,10 +42,15 @@ class ManagedBrowserSession:
         return self._state
 
     async def connect(self) -> None:
-        await self.browser_client.connect_over_cdp()
-        self._context = await self.browser_client.browser.new_context()
-        self._page = await self._context.new_page()
-        self._state = SessionState.CONNECTED
+        try:
+            await self.browser_client.connect_over_cdp()
+            self._context = await self.browser_client.browser.new_context()
+            self._page = await self._context.new_page()
+            self._state = SessionState.CONNECTED
+        except CDPConnectError as error:
+            raise RuntimeError(
+                f"Session {self.session_id} failed to connect after {error.attempts} attempts"
+            ) from error
 
     async def disconnect(self) -> None:
         if self._page is not None and not self._page.is_closed():
@@ -65,7 +70,12 @@ class ManagedBrowserSession:
 
     async def restart_context(self) -> None:
         await self.disconnect()
-        await self.connect()
+        try:
+            await self.connect()
+        except RuntimeError as error:
+            raise RuntimeError(
+                f"Session {self.session_id} failed to restart context: {error}"
+            ) from error
 
 
 class ChatSession(ManagedBrowserSession):
