@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from .utils import RollbackMetadata, apply_patch, render_preview, validate_patch
+from .utils import (
+    RollbackMetadata,
+    apply_patch,
+    calculate_sha256,
+    render_preview,
+    validate_patch_semantics,
+    validate_patch_structure,
+)
 
 
 @dataclass(slots=True)
@@ -50,17 +57,36 @@ class ManualApprovalPipeline:
         is_approved: Callable[[str], bool],
         patch_id: str | None = None,
     ) -> RollbackMetadata:
-        if not validate_patch(patch_text):
-            raise ValueError("Patch validation failed.")
+        target = Path(file_path)
+        if not target.exists():
+            raise FileNotFoundError(f"Target file not found: {file_path}")
+
+        original_content = target.read_text(encoding="utf-8")
+        original_sha256 = calculate_sha256(original_content)
+
+        if not validate_patch_structure(patch_text):
+            raise ValueError("Patch structural validation failed.")
+        if not validate_patch_semantics(
+            patch_text,
+            expected_original=original_content,
+            patched_content=patched_content,
+        ):
+            raise ValueError("Patch semantic validation failed.")
 
         preview = render_preview(patch_text)
         approved = is_approved(preview)
+        if not approved:
+            raise PermissionError("Patch application is blocked until manual approval is granted.")
+
+        if calculate_sha256(original_content) != original_sha256:
+            raise ValueError("Preview content checksum mismatch before apply.")
 
         return apply_patch(
             file_path=file_path,
             patched_content=patched_content,
-            approved=approved,
+            approved=True,
             patch_id=patch_id,
             temp_dir=self.temp_dir,
             patches_dir=self.patches_dir,
+            expected_original_sha256=original_sha256,
         )
