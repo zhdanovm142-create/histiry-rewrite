@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any, Dict
 
 from backend.browser.playwright.cdp import CDPBrowserClient
 from backend.browser.sessions import ChatSession, SessionState
+
+
+SessionEventPublisher = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 @dataclass
@@ -13,6 +18,8 @@ class SessionManager:
 
     browser_client: CDPBrowserClient
     _sessions: Dict[str, ChatSession] = field(default_factory=dict)
+    _reconnect_locks: Dict[str, asyncio.Lock] = field(default_factory=dict)
+    event_publisher: SessionEventPublisher | None = None
 
     async def create_session(self, session_id: str) -> ChatSession:
         if session_id in self._sessions:
@@ -41,13 +48,32 @@ class SessionManager:
             return False
 
     async def reconnect(self, session_id: str) -> ChatSession:
-        session = self._sessions.get(session_id)
-        if session is None:
-            session = ChatSession(session_id=session_id, browser_client=self.browser_client)
-            self._sessions[session_id] = session
+        lock = self._reconnect_locks.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                session = ChatSession(session_id=session_id, browser_client=self.browser_client)
+                self._sessions[session_id] = session
 
-        await session.restart_context()
-        return session
+            try:
+                await session.restart_context()
+            except Exception as error:  # noqa: BLE001
+                await self._publish_event(
+                    "session_reconnect_failure",
+                    {"session_id": session_id, "healthy": False, "error": str(error)},
+                )
+                raise
+
+            await self._publish_event(
+                "session_health",
+                {"session_id": session_id, "healthy": True},
+            )
+            return session
+
+    async def _publish_event(self, event_name: str, payload: dict[str, Any]) -> None:
+        if self.event_publisher is None:
+            return
+        await self.event_publisher(event_name, payload)
 
     async def close(self) -> None:
         for session_id in list(self._sessions):
