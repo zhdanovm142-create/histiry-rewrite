@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .models import TaskResult
 
-TaskEventHandler = Callable[[TaskResult], Awaitable[None]]
+TaskEvent = TaskResult | dict[str, Any]
+TaskEventHandler = Callable[[TaskEvent], Awaitable[None]]
 
 
 class EventBus:
@@ -18,7 +20,7 @@ class EventBus:
     def subscribe(self, event_name: str, handler: TaskEventHandler) -> None:
         self._handlers[event_name].append(handler)
 
-    async def publish(self, event_name: str, event: TaskResult) -> None:
+    async def publish(self, event_name: str, event: TaskEvent) -> None:
         handlers = tuple(self._handlers.get(event_name, ()))
         if not handlers:
             return
