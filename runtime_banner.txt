@@ -1,0 +1,13 @@
+SECURITY NOTICE
+---------------
+This runtime operates under strict manual-control policy:
+
+- Backend binding is restricted to localhost (127.0.0.1) unless explicitly reconfigured by authorized maintainers.
+- Remote execution is disabled by policy.
+- Hidden background autonomous job modes are forbidden.
+- Manual explicit approval is required before any patch is applied.
+
+PROHIBITED USE:
+- No anti-bot bypass
+- No captcha bypass
+- No mass automation
