@@ -22,6 +22,25 @@ class TaskState(str, Enum):
     RETRY_SCHEDULED = "retry_scheduled"
 
 
+_ALLOWED_TRANSITIONS: dict[TaskState, set[TaskState]] = {
+    TaskState.QUEUED: {TaskState.RUNNING, TaskState.FAILED},
+    TaskState.RUNNING: {TaskState.SUCCEEDED, TaskState.FAILED, TaskState.RETRY_SCHEDULED},
+    TaskState.RETRY_SCHEDULED: {TaskState.QUEUED},
+    TaskState.FAILED: set(),          # terminal
+    TaskState.SUCCEEDED: set(),       # terminal
+}
+
+
+def validate_transition(current: TaskState, target: TaskState) -> None:
+    """Raise ValueError if transition from current to target is not allowed."""
+    allowed = _ALLOWED_TRANSITIONS.get(current, set())
+    if target not in allowed:
+        raise ValueError(
+            f"Invalid task state transition: {current.value} -> {target.value}. "
+            f"Allowed: {[s.value for s in allowed]}"
+        )
+
+
 @dataclass(frozen=True)
 class TaskPayload:
     session_id: str

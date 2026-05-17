@@ -1,0 +1,17 @@
+*** Begin Patch
+*** Update File: target
+--- target (original)
++++ target (patched)
+@@ -1,9 +1,9 @@
+ def hello():
+-    print('Hello, World!')
++    print('Hello, Universe!')  # Changed
+     return True
+ 
+ def goodbye():
+-    print('Goodbye!')
++    print('See you later!')  # Changed
+     return False
+ 
+ # This is a very long comment that exceeds 120 characters and should be properly handled by the unified diff generator
+*** End Patch

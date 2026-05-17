@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 import hashlib
 import shutil
@@ -51,9 +52,19 @@ def validate_patch_semantics(
     if patched_content == expected_original:
         return False
 
-    original_excerpt = expected_original[:120]
-    patched_excerpt = patched_content[:120]
-    return f"- {original_excerpt}" in patch_text and f"+ {patched_excerpt}" in patch_text
+    # Generate expected diff and check it's a substring of the patch
+    expected_lines = list(difflib.unified_diff(
+        expected_original.splitlines(keepends=True),
+        patched_content.splitlines(keepends=True),
+        fromfile="target (original)",
+        tofile="target (patched)",
+    ))
+    expected_diff = "".join(expected_lines)
+
+    # Allow for header/footer wrapper in the patch
+    return expected_diff.strip() in patch_text or all(
+        line.strip() in patch_text for line in expected_lines
+    )
 
 
 def validate_patch(patch_text: str, *, expected_original: str, patched_content: str) -> bool:
