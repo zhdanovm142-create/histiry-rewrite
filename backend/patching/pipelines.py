@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import difflib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
@@ -21,17 +22,25 @@ class DiffPatchPipeline:
 
     temp_dir: str = "temp"
     patches_dir: str = "patches"
+    context_lines: int = 3
 
     def generate(self, original_text: str, patched_text: str) -> dict[str, str]:
         patch_id = str(uuid4())
-        patch_body = (
-            "*** Begin Patch\n"
-            "*** Update File: target\n"
-            "@@\n"
-            f"- {original_text[:120]}\n"
-            f"+ {patched_text[:120]}\n"
-            "*** End Patch\n"
-        )
+
+        original_lines = original_text.splitlines(keepends=True)
+        patched_lines = patched_text.splitlines(keepends=True)
+        diff_lines = list(difflib.unified_diff(
+            original_lines,
+            patched_lines,
+            fromfile="target (original)",
+            tofile="target (patched)",
+            n=self.context_lines,
+        ))
+
+        if not diff_lines:
+            raise ValueError("No differences detected between original and patched content.")
+
+        patch_body = "*** Begin Patch\n*** Update File: target\n" + "".join(diff_lines) + "*** End Patch\n"
 
         artifact_path = Path(self.patches_dir)
         artifact_path.mkdir(parents=True, exist_ok=True)

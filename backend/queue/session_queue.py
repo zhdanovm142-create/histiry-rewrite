@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 from .base import BaseTaskQueue, TaskHandler
 from .events import EventBus
-from .models import TaskEnvelope, TaskResult, TaskState
+from .models import TaskEnvelope, TaskResult, TaskState, validate_transition
 
 
 class AsyncioSessionTaskQueue(BaseTaskQueue):
@@ -25,8 +25,13 @@ class AsyncioSessionTaskQueue(BaseTaskQueue):
         self._handlers: dict[str, TaskHandler] = {}
         self._session_queues: dict[str, asyncio.Queue[TaskEnvelope]] = {}
         self._workers: dict[str, asyncio.Task[None]] = {}
+        self._dead_letters: dict[str, TaskEnvelope] = {}      # <-- ADD THIS
         self._session_lock = asyncio.Lock()
         self._shutdown = False
+
+    def get_dead_letters(self) -> dict[str, TaskEnvelope]:
+        """Return all tasks that permanently failed (exhausted all retries)."""
+        return dict(self._dead_letters)
 
     async def start(self) -> None:
         self._shutdown = False
@@ -108,6 +113,8 @@ class AsyncioSessionTaskQueue(BaseTaskQueue):
             )
             return
 
+        # QUEUED → RUNNING
+        validate_transition(TaskState.QUEUED, TaskState.RUNNING)
         await self.event_bus.publish("task_state", self._result(task, TaskState.RUNNING))
 
         try:
@@ -115,6 +122,8 @@ class AsyncioSessionTaskQueue(BaseTaskQueue):
         except Exception as exc:  # noqa: BLE001
             can_retry = task.attempt + 1 < task.max_attempts
             if can_retry:
+                # RUNNING → RETRY_SCHEDULED
+                validate_transition(TaskState.RUNNING, TaskState.RETRY_SCHEDULED)
                 retry_task = TaskEnvelope(
                     id=task.id,
                     payload=task.payload,
@@ -130,12 +139,21 @@ class AsyncioSessionTaskQueue(BaseTaskQueue):
                 await self.enqueue(retry_task)
                 return
 
+            # RUNNING → FAILED (permanent failure - add to DLQ)
+            validate_transition(TaskState.RUNNING, TaskState.FAILED)
+            self._dead_letters[task.id] = task       # <-- ADD THIS LINE
+            await self.event_bus.publish(
+                "dead_letter",                         # <-- ADD THIS EVENT
+                {"task_id": task.id, "error": str(exc), "session_id": task.payload.session_id},
+            )
             await self.event_bus.publish(
                 "task_state",
                 self._result(task, TaskState.FAILED, error=str(exc)),
             )
             return
 
+        # RUNNING → SUCCEEDED
+        validate_transition(TaskState.RUNNING, TaskState.SUCCEEDED)
         await self.event_bus.publish(
             "task_state",
             self._result(task, TaskState.SUCCEEDED, output=output),

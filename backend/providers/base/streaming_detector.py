@@ -14,7 +14,7 @@ class StreamingStatus:
     reason: str | None = None
 
 
-class BaseStreamingDetector(ABC):
+class StreamingDetector(ABC):
     """Provider-specific streaming detector interface.
 
     This base class is intentionally DOM-agnostic. Every provider implementation
@@ -30,3 +30,7 @@ class BaseStreamingDetector(ABC):
     def is_stale(self, dom_state: Any) -> bool:
         """Return True when provider page/session is stale and requires reload."""
         raise NotImplementedError
+
+
+# Backwards-compatible alias
+BaseStreamingDetector = StreamingDetector

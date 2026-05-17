@@ -1,0 +1,13 @@
+*** Begin Patch
+*** Update File: target
+--- target (original)
++++ target (patched)
+@@ -1,5 +1,5 @@
+ def hello():
+-    print("Hello, World!")
++    print("Hello, Universe!")
+     
+ def goodbye():
+-    print("Goodbye!")
++    print("See you later!")
+*** End Patch
